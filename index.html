@@ -14,14 +14,18 @@
             --secondary-color: #2ecc71;
             --danger-color: #e74c3c;
             --card-bg: #fff;
+            --input-bg: #fff;
+            --input-border: #ddd;
         }
         body.dark-mode {
-            --bg-color: #2c3e50;
+            --bg-color: #1a1a1a;
             --text-color: #ecf0f1;
             --primary-color: #3498db;
             --secondary-color: #2ecc71;
             --danger-color: #e74c3c;
-            --card-bg: #34495e;
+            --card-bg: #2c2c2c;
+            --input-bg: #333;
+            --input-border: #444;
         }
         body {
             font-family: 'Arial', sans-serif;
@@ -29,6 +33,8 @@
             color: var(--text-color);
             background-color: var(--bg-color);
             transition: background-color 0.3s, color 0.3s;
+            margin: 0;
+            padding: 0;
         }
         #app-container {
             max-width: 800px;
@@ -38,6 +44,7 @@
         h1 {
             text-align: center;
             color: var(--primary-color);
+            margin-bottom: 30px;
         }
         .card {
             background-color: var(--card-bg);
@@ -49,14 +56,14 @@
         #note-form, #search-container {
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 15px;
         }
         input, select, .ql-container {
             padding: 10px;
             font-size: 16px;
-            border: 1px solid #ddd;
+            border: 1px solid var(--input-border);
             border-radius: 4px;
-            background-color: var(--card-bg);
+            background-color: var(--input-bg);
             color: var(--text-color);
         }
         button {
@@ -67,10 +74,14 @@
             border: none;
             border-radius: 4px;
             cursor: pointer;
-            transition: background-color 0.3s;
+            transition: background-color 0.3s, transform 0.1s;
         }
         button:hover {
             opacity: 0.9;
+            transform: translateY(-2px);
+        }
+        button:active {
+            transform: translateY(0);
         }
         #notes-list {
             list-style-type: none;
@@ -82,6 +93,11 @@
             padding: 15px;
             border-radius: 5px;
             border-left: 5px solid var(--primary-color);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .note-item:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
         }
         .note-header {
             display: flex;
@@ -115,12 +131,13 @@
         }
         .tag {
             display: inline-block;
-            background-color: #3498db;
+            background-color: var(--primary-color);
             color: white;
             padding: 2px 8px;
             border-radius: 12px;
             font-size: 12px;
             margin-right: 5px;
+            margin-bottom: 5px;
         }
         #mode-toggle {
             position: fixed;
@@ -132,9 +149,34 @@
             padding: 10px;
             border-radius: 50%;
             cursor: pointer;
+            z-index: 1000;
         }
         .ql-editor {
-            min-height: 100px;
+            min-height: 150px;
+            background-color: var(--input-bg);
+            color: var(--text-color);
+        }
+        .ql-toolbar {
+            background-color: var(--card-bg);
+            border-color: var(--input-border) !important;
+        }
+        .ql-toolbar button {
+            color: var(--text-color) !important;
+        }
+        .ql-toolbar button:hover {
+            color: var(--primary-color) !important;
+        }
+        .ql-toolbar .ql-stroke {
+            stroke: var(--text-color) !important;
+        }
+        .ql-toolbar .ql-fill {
+            fill: var(--text-color) !important;
+        }
+        .ql-toolbar .ql-picker {
+            color: var(--text-color) !important;
+        }
+        #toggle-archived {
+            margin-bottom: 15px;
         }
     </style>
 </head>
@@ -147,15 +189,18 @@
                 <input type="text" id="search-input" placeholder="Search notes...">
             </div>
         </div>
+        <button id="toggle-archived">Toggle Archived Notes</button>
         <div class="card">
             <form id="note-form">
                 <input type="text" id="title-input" placeholder="Enter note title" required>
                 <div id="editor"></div>
+                <div id="category-management">
+                    <input type="text" id="new-category-name" placeholder="Enter new category name">
+                    <button id="add-category-btn">Add Category</button>
+                </div>
+            
                 <select id="category-input">
-                    <option value="general">General</option>
-                    <option value="work">Work</option>
-                    <option value="personal">Personal</option>
-                    <option value="ideas">Ideas</option>
+                    <!-- Options will be added dynamically -->
                 </select>
                 <input type="text" id="tags-input" placeholder="Enter tags (comma-separated)">
                 <button type="submit" id="submit-btn">Add Note</button>
@@ -175,6 +220,8 @@
         const searchInput = document.getElementById('search-input');
         const submitBtn = document.getElementById('submit-btn');
         const modeToggle = document.getElementById('mode-toggle');
+        const toggleArchivedBtn = document.getElementById('toggle-archived');
+        let categories = JSON.parse(localStorage.getItem('categories')) || ['general', 'work', 'personal', 'ideas'];
 
         let notes = JSON.parse(localStorage.getItem('notes')) || [];
         let archivedNotes = JSON.parse(localStorage.getItem('archivedNotes')) || [];
@@ -184,6 +231,16 @@
         const quill = new Quill('#editor', {
             theme: 'snow',
             placeholder: 'Enter note content...',
+            modules: {
+                toolbar: [
+                    [{ 'header': [1, 2, 3, false] }],
+                    ['bold', 'italic', 'underline', 'strike'],
+                    [{ 'color': [] }, { 'background': [] }],
+                    [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+                    ['link', 'image'],
+                    ['clean']
+                ]
+            }
         });
 
         function renderNotes(notesToRender = notes) {
@@ -222,6 +279,30 @@
             editingIndex = -1;
         }
 
+        function addCategory(categoryName) {
+            // Check if the category already exists to avoid duplicates
+            if (!categories.includes(categoryName)) {
+                categories.push(categoryName);
+                updateCategoryDropdown();
+                saveCategories();
+            }
+        }
+
+        function updateCategoryDropdown() {
+            const categoryInput = document.getElementById('category-input');
+            categoryInput.innerHTML = ''; // Clear existing options
+            categories.forEach(category => {
+                const option = document.createElement('option');
+                option.value = category;
+                option.textContent = category;
+                categoryInput.appendChild(option);
+            });
+        }
+
+        function saveCategories() {
+            localStorage.setItem('categories', JSON.stringify(categories));
+        }
+
         noteForm.addEventListener('submit', (e) => {
             e.preventDefault();
             const title = titleInput.value.trim();
@@ -258,11 +339,11 @@
                 saveNotes();
                 renderNotes(notesToModify);
             } else if (e.target.classList.contains('edit-btn')) {
-                const note = notes[index];
-                titleInput.value = note.title;
-                quill.root.innerHTML = note.content;
-                categoryInput.value = note.category;
-                tagsInput.value = note.tags.join(', ');
+                const noteToEdit = showArchived ? archivedNotes[index] : notes[index];
+                titleInput.value = noteToEdit.title;
+                quill.root.innerHTML = noteToEdit.content;
+                categoryInput.value = noteToEdit.category;
+                tagsInput.value = noteToEdit.tags.join(', ');
                 submitBtn.textContent = 'Update Note';
                 editingIndex = parseInt(index);
             } else if (e.target.classList.contains('archive-btn')) {
@@ -292,9 +373,22 @@
 
         modeToggle.addEventListener('click', () => {
             document.body.classList.toggle('dark-mode');
+            localStorage.setItem('darkMode', document.body.classList.contains('dark-mode'));
         });
 
+        toggleArchivedBtn.addEventListener('click', () => {
+            showArchived = !showArchived;
+            toggleArchivedBtn.textContent = showArchived ? 'Show Active Notes' : 'Show Archived Notes';
+            renderNotes(showArchived ? archivedNotes : notes);
+        });
+
+        // Initialize dark mode
+        if (localStorage.getItem('darkMode') === 'true') {
+            document.body.classList.add('dark-mode');
+        }
+
         renderNotes();
+        updateCategoryDropdown();
     </script>
 </body>
 </html>
